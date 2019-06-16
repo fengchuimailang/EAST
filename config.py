@@ -4,7 +4,7 @@ test_dir = data_root + r"\ch4_test_images"
 train_gt_dir = data_root + r"\ch4_training_localization_transcription_gt"
 test_gt_dir = data_root + r"\Challenge4_Test_Task1_GT"
 
-batch_size = 20
+batch_size = 5
 validation_percent = 0.1
 
 num_train_samples = 900

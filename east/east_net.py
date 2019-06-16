@@ -1,5 +1,5 @@
 import tensorflow as tf
-from loss import total_loss, scope_map_loss, geomery_loss
+from east.loss import total_loss, scope_map_loss, geomery_loss
 
 
 class EAST(object):
@@ -7,43 +7,120 @@ class EAST(object):
         self.graph = tf.Graph()
         self.config = config
 
-    def unpool(self, x, name="unpool"):
+    def read_and_decode(self, save_paths, is_training=True):
         """
-        https://github.com/tensorflow/tensorflow/issues/2169
-        N-dimensional version of the unpooling operation
+        读取输入并转换为dataset
+        :param save_paths:
+        :param is_training:
+        :return:
+        """
 
-        :param x: A Tensor of shape [b, d0, d1, ..., dn, ch]
-        :param name:
+        def parse_example(serialized_example):
+            context_features = {
+                "image_width": tf.FixedLenFeature([], dtype=tf.int64),
+                "image_height": tf.FixedLenFeature([], dtype=tf.int64),
+                "image": tf.FixedLenFeature([], dtype=tf.string),
+                "gt_width": tf.FixedLenFeature([], dtype=tf.int64),
+                'gt_height': tf.FixedLenFeature([], dtype=tf.int64),
+                "gt": tf.FixedLenFeature([], dtype=tf.string),
+                "original_coord_n": tf.FixedLenFeature([], dtype=tf.int64),
+                "original_coord": tf.FixedLenFeature([], dtype=tf.string),
+                "img_id": tf.FixedLenFeature([], dtype=tf.string)
+            }
+            sequence_features = {
+            }
+            context_parsed, sequence_parsed = tf.parse_single_sequence_example(
+                serialized_example,
+                context_features=context_features,
+                sequence_features=sequence_features
+            )
+            image_width = tf.cast(context_parsed["image_width"], tf.int32)
+            image_height = tf.cast(context_parsed["image_height"], tf.int32)
+            image = tf.decode_raw(context_parsed["image"], tf.uint8)
+            # 图片预处理
+            image = tf.reshape(image, [image_height, image_width, 3])
+            image = tf.cast(image, dtype=tf.float32) / 255.0
+
+            gt_width = tf.cast(context_parsed["gt_width"], tf.int32)
+            gt_height = tf.cast(context_parsed["gt_height"], tf.int32)
+            gt = tf.decode_raw(context_parsed["gt"], tf.float64)
+            gt = tf.reshape(gt, [gt_height, gt_width, 9])
+            gt = tf.cast(gt, dtype=tf.float32)
+
+            original_coord_n = tf.cast(context_parsed["original_coord_n"], tf.int32)
+            original_coord = tf.decode_raw(context_parsed["original_coord"], tf.float64)
+            original_coord = tf.reshape(original_coord, [original_coord_n, 4, 2])
+
+            img_id = tf.cast(context_parsed["img_id"], tf.string)  # 暂时没有用
+            return image, gt, original_coord, original_coord_n, img_id
+
+        dataset = tf.data.TFRecordDataset(save_paths)
+        dataset = dataset.map(parse_example)
+        dataset = dataset.repeat().shuffle(10 * self.config.batch_size)
+        dataset = dataset.padded_batch(self.config.batch_size, ([self.config.img_height, self.config.img_width, 3],
+                                                                [self.config.out_put_height, self.config.out_put_width,
+                                                                 9], [self.config.max_original_coord_number, 4, 2], [],
+                                                                []))
+        iterator = dataset.make_one_shot_iterator()
+        image, gt, original_coord, original_coord_n, img_id = iterator.get_next()
+        return image, gt, original_coord, original_coord_n, img_id
+
+    # def unpool(self, x, name="unpool"):
+    #     """
+    #     反池化
+    #     https://github.com/tensorflow/tensorflow/issues/2169
+    #     N-dimensional version of the unpooling operation
+    #     :param x: A Tensor of shape [b, d0, d1, ..., dn, ch]
+    #     :param name:
+    #     :return: A Tensor of shape [b, 2*d0, 2*d1, ..., 2*dn, ch]
+    #     """
+    #     with tf.name_scope(name) as scope:
+    #         out = tf.concat([x, tf.zeros_like(x)], 3)
+    #         out = tf.concat([out, tf.zeros_like(out)], 2)
+    #
+    #         sh = x.get_shape().as_list()
+    #         if None not in sh[1:]:
+    #             out_size = [sh[0], sh[1] * 2, sh[2] * 2, sh[3]]
+    #             out = tf.reshape(out, out_size)
+    #         else:
+    #             shv = tf.shape(x)
+    #             ret = tf.reshape(out, tf.stack([sh[0], shv[1] * 2, shv[2] * 2, sh[3]]))
+    #             out = ret
+    #     return out
+
+    def unpool(self,value, name='unpool'):
+        """N-dimensional version of the unpooling operation from
+        https://www.robots.ox.ac.uk/~vgg/rg/papers/Dosovitskiy_Learning_to_Generate_2015_CVPR_paper.pdf
+
+        :param value: A Tensor of shape [b, d0, d1, ..., dn, ch]
         :return: A Tensor of shape [b, 2*d0, 2*d1, ..., 2*dn, ch]
         """
         with tf.name_scope(name) as scope:
-            out = tf.concat([x, tf.zeros_like(x)], 3)
-            out = tf.concat([out, tf.zeros_like(out)], 2)
-
-            sh = x.get_shape().as_list()
-            if None not in sh[1:]:
-                out_size = [sh[0], sh[1] * 2, sh[2] * 2, sh[3]]
-                out = tf.reshape(out, out_size)
-            else:
-                shv = tf.shape(x)
-                ret = tf.reshape(out, tf.stack([sh[0], shv[1] * 2, shv[2] * 2, sh[3]]))
-                out = ret
+            sh = value.get_shape().as_list()
+            dim = len(sh[1:-1])
+            out = (tf.reshape(value, [-1] + sh[-dim:]))
+            for i in range(dim, 0, -1):
+                out = tf.concat([out, tf.zeros_like(out)], i)
+            out_size = [-1] + [s * 2 for s in sh[1:-1]] + [sh[-1]]
+            out = tf.reshape(out, out_size, name=scope)
         return out
 
-    def build_PVANET_based_net(self, batch_size, img_width, img_length, inputs):
-        # feature extractor stem
-        conv0 = tf.layers.conv2d(inputs, filters=16, kernel_size=(7, 7), strides=(2, 2), padding="same",
-                                 activation=tf.nn.relu, name="conv0")
-
-        conv1 = tf.layers.conv2d(inputs, filters=64, kernel_size=(3, 3), strides=(2, 2), padding="same",
-                                 activation=tf.nn.relu, name="conv0")
-
-        # feature-merging branch
-
-        # output layer
+    def build_PVANET_based_net(self, inputs):
+        """
+        构建以PVANET为backbone的神经网络
+        :param inputs:
+        :return:
+        """
+        # TODO
+        pass
 
     def build_VFF16_based_net(self, inputs):
-        # feature extractor stem
+        """
+        构建以VFF16为backbone的神经网络
+        :param inputs:
+        :return:
+        """
+        # feature extractor stem 特征提取
         conv1_1 = tf.layers.conv2d(inputs, filters=64, kernel_size=(3, 3), strides=(1, 1), padding="same",
                                    activation=tf.nn.relu, name="conv1_1")
         conv1_2 = tf.layers.conv2d(conv1_1, filters=64, kernel_size=(3, 3), strides=(1, 1), padding="same",
@@ -80,7 +157,7 @@ class EAST(object):
                                    activation=tf.nn.relu, name="conv5_3")
         pool_5 = tf.layers.max_pooling2d(conv5_3, pool_size=[2, 2], strides=[2, 2], padding="same", name="pool_5")
 
-        # feature-merging branch
+        # feature-merging branch 特征融合
 
         unpool_1 = self.unpool(pool_5, "unpool_1")
         concat_1 = tf.concat([unpool_1, pool_4], axis=-1)
@@ -110,85 +187,42 @@ class EAST(object):
                                              padding="same",
                                              activation=tf.nn.relu, name="final_feature_map")
 
+        # output layer  输出层
         score_map = tf.layers.conv2d(final_feature_map, filters=1, kernel_size=(1, 1), strides=(1, 1),
                                      padding="same",
                                      activation=tf.nn.relu, name="score_map")
         QUAD_coord = tf.layers.conv2d(final_feature_map, filters=8, kernel_size=(1, 1), strides=(1, 1),
                                       padding="same",
                                       activation=tf.nn.relu, name="QUAD_coord")
-
-        # 目标输出 第一层scope_map 后面8层是坐标
-        # targets = tf.placeholder(tf.int32, shape=[batch_size, img_width, img_height, 9], name="targets")
-
-        # # loss
-        # s_m_loss = scope_map_loss(score_map, targets[0])
-        # g_loss = geomery_loss(QUAD_coord, targets[1:])
-        # loss = total_loss(s_m_loss, g_loss)
-
-        # 优化器
-        # optimizer = tf.train.AdamOptimizer(learning_rate=0.0001).minimize(loss)
-
-        # 返回结果
         return score_map, QUAD_coord
 
-    def read_and_decode(self, save_paths, is_training=True):
-        filename_queue = tf.train.string_input_producer([save_paths])
-        reader = tf.TFRecordReader()
-        _, serialized_example = reader.read(filename_queue)
-
-        context_features = {
-            "image_width": tf.FixedLenFeature([], dtype=tf.int64),
-            "image_height": tf.FixedLenFeature([], dtype=tf.int64),
-            "image": tf.FixedLenFeature([], dtype=tf.string),
-            # "coords": tf.FixedLenFeature([], dtype=tf.string),
-            "gt_width": tf.FixedLenFeature([], dtype=tf.int64),
-            'gt_height': tf.FixedLenFeature([], dtype=tf.int64),
-            "gt": tf.FixedLenFeature([], dtype=tf.string)
-        }
-        sequence_features = {
-        }
-        context_parsed, sequence_parsed = tf.parse_single_sequence_example(
-            serialized_example,
-            context_features=context_features,
-            sequence_features=sequence_features
-        )
-        image_width = tf.cast(context_parsed["image_width"], tf.int32)
-        image_height = tf.cast(context_parsed["image_height"], tf.int32)
-        image = tf.decode_raw(context_parsed["image"], tf.uint8)
-        # coords = tf.decode_raw(context_parsed["coords"], tf.float32)
-        gt_width = tf.cast(context_parsed["gt_width"], tf.int32)
-        gt_height = tf.cast(context_parsed["gt_height"], tf.int32)
-        gt = tf.decode_raw(context_parsed["gt"], tf.float64)
-
-        image = tf.reshape(image, [image_height, image_width, 3])
-        image = tf.cast(image, dtype=tf.float32) / 255.0
-        # coords = tf.reshape(coords, [-1, 4, 2])
-        gt = tf.reshape(gt, [gt_height, gt_width, 9])
-        gt = tf.cast(gt, dtype=tf.float32)
-        # input_tensors = [image, coords]
-        input_tensors = [image, gt]
-
-        shuffle_queue = tf.RandomShuffleQueue(self.config.batch_size * 100, self.config.batch_size * 10,
-                                              dtypes=[t.dtype for t in input_tensors])
-        enqueue_op = shuffle_queue.enqueue(input_tensors)
-        runner = tf.train.QueueRunner(shuffle_queue, [enqueue_op] * self.config.shuffle_threads)
-        tf.train.add_queue_runner(runner)
-        output_tensors = shuffle_queue.dequeue()
-        for i in range(len(input_tensors)):
-            output_tensors[i].set_shape(input_tensors[i].shape)
-        return tf.train.batch(tensors=output_tensors, batch_size=self.config.batch_size, dynamic_pad=True)
-
     def build_net(self, train_tfrecords, valid_tfrecords, is_training=True):
+        """
+        构建神经网络包括输入和输出，再训练和测试的情况下都可以使用
+        :param train_tfrecords:
+        :param valid_tfrecords:
+        :param is_training:
+        :return:
+        """
         with self.graph.as_default():
-            if is_training:
+            if is_training:  # 训练中 包含训练阶段和测试阶段
                 self.train_stage = tf.placeholder(tf.bool, shape=())  # True if train, else valid
-                train_x, train_y = self.read_and_decode(train_tfrecords)
-                valid_x, valid_y = self.read_and_decode(valid_tfrecords)
+                train_x, train_y, train_original_coord, train_original_coord_n, train_img_id = self.read_and_decode(
+                    train_tfrecords)
+                valid_x, valid_y, valid_original_coord, valid_original_coord_n, valid_img_id = self.read_and_decode(
+                    valid_tfrecords)
                 self.x = tf.cond(self.train_stage, lambda: train_x, lambda: valid_x)
                 self.y = tf.cond(self.train_stage, lambda: train_y, lambda: valid_y)
-            else:
+                self.original_coord = tf.cond(self.train_stage, lambda: train_original_coord,
+                                              lambda: valid_original_coord)
+                self.original_coord_n = tf.cond(self.train_stage, lambda: train_original_coord_n,
+                                                lambda: valid_original_coord_n)
+
+                self.img_id = tf.cond(self.train_stage, lambda: train_img_id, lambda: valid_img_id)
+            else:  # 运行某一个sample
                 self.x = tf.placeholder(tf.float32, shape=(None, self.config.img_height, self.config.img_width, 3))
             score_map, QUAD_coord = self.build_VFF16_based_net(self.x)
+            self.pred = tf.concat([QUAD_coord, score_map], -1)  # TODO 这里为了和nms对应,颠倒了顺序
 
             # loss  y的第一层是score_map 后面8层是geomery信息
             self.s_m_loss = scope_map_loss(score_map, self.y[:, :, :, :1])
@@ -198,9 +232,3 @@ class EAST(object):
             self.learning_rate = tf.placeholder(tf.float32, [])
             optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, epsilon=1e-9)
             self.optimizer = optimizer.minimize(self.mean_loss)
-
-            ## accuracy  TODO
-
-
-if __name__ == "__main__":
-    pass

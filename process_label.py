@@ -7,12 +7,13 @@ from prepocess import shrink
 
 
 # 判断一个点是不是在四边形的内部
-# TODO 修改
 def point_inside_of_quad(px, py, quad_xy_list, p_min, p_max):
     if (p_min[0] <= px <= p_max[0]) and (p_min[1] <= py <= p_max[1]):
+        # xy_list 是上一个点减下一个点的坐标偏移
         xy_list = np.zeros((4, 2))
         xy_list[:3, :] = quad_xy_list[1:4, :] - quad_xy_list[:3, :]
         xy_list[3] = quad_xy_list[0, :] - quad_xy_list[3, :]
+
         yx_list = np.zeros((4, 2))
         yx_list[:, :] = quad_xy_list[:, -1:-3:-1]
         a = xy_list * ([py, px] - yx_list)
@@ -73,7 +74,7 @@ def process_label(data_dir=config.data_root):
                     # 还原到原图中
                     px = (j + 0.5) * config.pixel_size
                     py = (i + 0.5) * config.pixel_size
-                    if point_inside_of_quad(px, py, shrink_xy_list, p_min, p_min):
+                    if point_inside_of_quad(px, py, shrink_xy_list, p_min, p_max):
                         gt[i, j, 0] = 1
                         # 剩下的8个通道是到四个点的坐标变换
                         shift = coord_shift(px, py, shrink_xy_list)

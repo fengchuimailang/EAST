@@ -27,12 +27,12 @@ def split_train_valid_to_info(train_valid_dir, train_info_file, valid_info_file,
                     t_f.write("train_number:" + str(train_count) + " " + filename.split(".")[0] + "\n")
 
 
-# def test_to_info(test_dir, test_info_file):
-#     with open(test_info_file, "w", encoding="utf-8") as t_f:
-#         test_count = 0
-#         for filename in tqdm(os.listdir(test_dir)):
-#             test_count += 1
-#             t_f.write("test_number:" + str(test_count) + " " + filename.split(".")[0] + "\n")
+def test_to_info(test_dir, test_info_file):
+    with open(test_info_file, "w", encoding="utf-8") as t_f:
+        test_count = 0
+        for filename in tqdm(os.listdir(test_dir)):
+            test_count += 1
+            t_f.write("test_number:" + str(test_count) + " " + filename.split(".")[0] + "\n")
 
 
 def image_path_from(jpg_root_dir, img_id):
@@ -57,22 +57,23 @@ def samples(jpg_root_dir, label_dir, info_file):
         line = info_f.readline().strip()
         while line:
             info_id, img_id = line.split(" ")
+            line = info_f.readline().strip()
             # 打开图片
             image = Image.open(image_path_from(jpg_root_dir, img_id))
             # 打开groundtruth
             coords = []
-            texts = []
-            with open(label_path_from(label_dir, img_id), encoding="utf-8") as label_f:
-                for label_line in label_f.readlines():
-                    label_line = label_line.strip()
-                    if not label_line:
-                        strs = label_line.split(",")
-                        coord_strs = strs[:-1]
-                        assert len(coord_strs) == 8, "坐标长不为8"
-                        text = strs[-1]
-                        coords.append([int(i) for i in coord_strs])
-                        texts.append(text)
-            line = info_f.readline().strip()
+            # texts = []
+            # with open(label_path_from(label_dir, img_id), encoding="utf-8") as label_f:
+            #     for label_line in label_f.readlines():
+            #         label_line = label_line.strip()
+            #         if not label_line:
+            #             strs = label_line.split(",")
+            #             coord_strs = strs[:-1]
+            #             assert len(coord_strs) == 8, "坐标长不为8"
+            #             text = strs[-1]
+            #             coords.append([int(i) for i in coord_strs])
+            #             texts.append(text)
+
 
             # 加载ground_truth
             ground_truth = np.load(os.path.join(config.data_root, config.train_label_dir, img_id + "_gt.npy"))

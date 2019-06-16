@@ -2,6 +2,13 @@ import tensorflow as tf
 
 
 def total_loss(score_map_loss, geomery_loss, lambda_g=1):
+    """
+    总损失
+    :param score_map_loss:
+    :param geomery_loss:
+    :param lambda_g:
+    :return:
+    """
     return score_map_loss + lambda_g * geomery_loss
 
 

@@ -5,6 +5,7 @@ from PIL import Image, ImageDraw
 import numpy as np
 
 
+# 将四个点按照顺序排列
 def reorder_vertexes(xy_list):  # TODO 待优化
     reorder_xy_list = np.zeros_like(xy_list)
     # determine the first point with the smallest x,
