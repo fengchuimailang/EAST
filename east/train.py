@@ -21,7 +21,7 @@ def turn_pred_delta_coord_to_coord(pred):
 
 def train():
     g = EAST(config=config)
-    g.build_net(g.config.train_tfrecords, g.config.valid_tfrecords)
+    g.build_net()
     sv = tf.train.Supervisor(graph=g.graph, logdir=config.logdir)
     # merged_summary_op = tf.summary.merge_all()
     saver = sv.saver  # 创建saver

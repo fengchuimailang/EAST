@@ -55,3 +55,9 @@ learning_rate = 1e-4
 display = 10  # 每隔多少步进行输出
 total_steps = 200000
 view_valid_dir = os.path.join(data_root, "view_valid_dir")
+
+# 神经网络测试相关
+eval_times = 20
+
+# 神经网络测试相关
+view_test_dir = os.path.join(data_root, "view_test_dir")

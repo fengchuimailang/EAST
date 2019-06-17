@@ -7,7 +7,7 @@ class EAST(object):
         self.graph = tf.Graph()
         self.config = config
 
-    def read_and_decode(self, save_paths, is_training=True):
+    def load_tfrecords(self, save_paths, is_training=True):
         """
         读取输入并转换为dataset
         :param save_paths:
@@ -88,7 +88,7 @@ class EAST(object):
     #             out = ret
     #     return out
 
-    def unpool(self,value, name='unpool'):
+    def unpool(self, value, name='unpool'):
         """N-dimensional version of the unpooling operation from
         https://www.robots.ox.ac.uk/~vgg/rg/papers/Dosovitskiy_Learning_to_Generate_2015_CVPR_paper.pdf
 
@@ -196,7 +196,7 @@ class EAST(object):
                                       activation=tf.nn.relu, name="QUAD_coord")
         return score_map, QUAD_coord
 
-    def build_net(self, train_tfrecords, valid_tfrecords, is_training=True):
+    def build_net(self, is_training=True):
         """
         构建神经网络包括输入和输出，再训练和测试的情况下都可以使用
         :param train_tfrecords:
@@ -207,10 +207,10 @@ class EAST(object):
         with self.graph.as_default():
             if is_training:  # 训练中 包含训练阶段和测试阶段
                 self.train_stage = tf.placeholder(tf.bool, shape=())  # True if train, else valid
-                train_x, train_y, train_original_coord, train_original_coord_n, train_img_id = self.read_and_decode(
-                    train_tfrecords)
-                valid_x, valid_y, valid_original_coord, valid_original_coord_n, valid_img_id = self.read_and_decode(
-                    valid_tfrecords)
+                train_x, train_y, train_original_coord, train_original_coord_n, train_img_id = self.load_tfrecords(
+                    self.config.train_tfrecords)
+                valid_x, valid_y, valid_original_coord, valid_original_coord_n, valid_img_id = self.load_tfrecords(
+                    self.config.valid_tfrecords)
                 self.x = tf.cond(self.train_stage, lambda: train_x, lambda: valid_x)
                 self.y = tf.cond(self.train_stage, lambda: train_y, lambda: valid_y)
                 self.original_coord = tf.cond(self.train_stage, lambda: train_original_coord,
@@ -224,11 +224,12 @@ class EAST(object):
             score_map, QUAD_coord = self.build_VFF16_based_net(self.x)
             self.pred = tf.concat([QUAD_coord, score_map], -1)  # TODO 这里为了和nms对应,颠倒了顺序
 
-            # loss  y的第一层是score_map 后面8层是geomery信息
-            self.s_m_loss = scope_map_loss(score_map, self.y[:, :, :, :1])
-            self.g_loss = geomery_loss(QUAD_coord, self.y[:, :, :, 1:])
-            loss = total_loss(self.s_m_loss, self.g_loss)
-            self.mean_loss = loss
-            self.learning_rate = tf.placeholder(tf.float32, [])
-            optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, epsilon=1e-9)
-            self.optimizer = optimizer.minimize(self.mean_loss)
+            if is_training:
+                # loss  y的第一层是score_map 后面8层是geomery信息
+                self.s_m_loss = scope_map_loss(score_map, self.y[:, :, :, :1])
+                self.g_loss = geomery_loss(QUAD_coord, self.y[:, :, :, 1:])
+                loss = total_loss(self.s_m_loss, self.g_loss)
+                self.mean_loss = loss
+                self.learning_rate = tf.placeholder(tf.float32, [])
+                optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate, epsilon=1e-9)
+                self.optimizer = optimizer.minimize(self.mean_loss)
