@@ -1,3 +1,5 @@
+import sys
+sys.path.append("..")
 import tensorflow as tf
 from tqdm import tqdm
 import numpy as np

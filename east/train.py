@@ -1,3 +1,5 @@
+import sys
+sys.path.append("..")
 import tensorflow as tf
 from east.east_net import EAST
 import east.config as config

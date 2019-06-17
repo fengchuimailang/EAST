@@ -2,7 +2,8 @@
 # 1.分割训练集、验证集和测试集，形成info信息
 # 2.生成训练集、验证集和测试集 包括 img、gt
 # 3.生成训练集、验证集和测试集的可视化图片信息
-
+import sys
+sys.path.append("..")
 import os
 import east.config as config
 from tqdm import tqdm

@@ -1,3 +1,7 @@
+import sys
+sys.path.append("..")
+import sys
+sys.path.append("..")
 import tensorflow as tf
 from east.loss import total_loss, scope_map_loss, geomery_loss
 

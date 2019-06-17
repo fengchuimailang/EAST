@@ -1,3 +1,5 @@
+import sys
+sys.path.append("..")
 import numpy as np
 from shapely.geometry import Polygon
 import os
