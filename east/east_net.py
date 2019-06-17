@@ -188,9 +188,10 @@ class EAST(object):
                                              activation=tf.nn.relu, name="final_feature_map")
 
         # output layer  输出层
-        score_map = tf.layers.conv2d(final_feature_map, filters=1, kernel_size=(1, 1), strides=(1, 1),
-                                     padding="same",
-                                     activation=tf.nn.relu, name="score_map")
+        score_map_losits = tf.layers.conv2d(final_feature_map, filters=1, kernel_size=(1, 1), strides=(1, 1),
+                                            padding="same",
+                                            activation=tf.nn.relu, name="score_map")
+        score_map = tf.nn.sigmoid(score_map_losits, name="score_map_sigmoid")
         QUAD_coord = tf.layers.conv2d(final_feature_map, filters=8, kernel_size=(1, 1), strides=(1, 1),
                                       padding="same",
                                       activation=tf.nn.relu, name="QUAD_coord")

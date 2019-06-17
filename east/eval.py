@@ -56,7 +56,6 @@ def eval():
                                 width=1, fill='blue')
                     if not os.path.exists(g.config.view_test_dir):
                         os.mkdir(g.config.view_test_dir)
-                    show_gt_image.show()
                     show_gt_image.save(os.path.join(g.config.view_test_dir, img_id_i + "_view.jpg"))
 
 
